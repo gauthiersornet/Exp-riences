@@ -1,5 +1,4 @@
-﻿using OpenAI_API;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -16,19 +15,25 @@ namespace Bidouille
     public partial class Form1 : Form
     {
         private Image img = null;
-        OpenAIAPI api;
-        Task<CompletionResult> result;
 
         static double Racine2 = 1.4142135623730950488016887242097;
         static double UnSurRacine2 = 0.70710678118654752440084436210485;
-        static double DeuxFoisUnSurRacine2 = 0.5;
+        static double UnSurRacine2AuCarré = 0.5;
 
         struct ARGB
         {
-            byte B;
-            byte G;
-            byte R;
-            byte A;
+            public byte B;
+            public byte G;
+            public byte R;
+            public byte A;
+
+            public ARGB(byte g)
+            {
+                A = 255;
+                R = g;
+                G = g;
+                B = g;
+            }
 
             public ARGB(byte a, byte r, byte g, byte b)
             {
@@ -40,12 +45,17 @@ namespace Bidouille
 
             static public byte PixDelta(ARGB v, ARGB w)
             {
-                int /*A,*/ R, G, B;
-                //A = v.A; A -= w.A;
-                R = v.R; R -= w.R;
-                G = v.G; G -= w.G;
-                B = v.B; B -= w.B;
-                return (byte)Math.Sqrt((/*A * A +*/ R * R + G * G + B * B) / 3.0);
+                int sA = (w.A + w.B);
+                if (sA > 0)
+                {
+                    long /*A,*/ R, G, B;
+                    //A = v.A; A -= w.A;
+                    R = v.A * v.R; R -= w.A * w.R;
+                    G = v.A * v.G; G -= w.A * w.G;
+                    B = v.A * v.B; B -= w.A * w.B;
+                    return (byte)Math.Sqrt((/*A * A +*/ R * R + G * G + B * B) / (3.0 * sA * sA));
+                }
+                else return 0;
             }
 
             static public ARGB Pond(ARGB v, ARGB w, double p)
@@ -77,7 +87,7 @@ namespace Bidouille
             //        if(!File.Exists(fn))File.Copy(f, fn);
             //    }
             //}
-            
+
             InitializeComponent();
             //img = CalculerOnde(0.1, 0.1, 300);
             //img = GrayToImg(CalculerOndeToGray(0.1, 0.1, 300), new Size(601, 601));
@@ -97,12 +107,6 @@ namespace Bidouille
             textBox1.Text = "Que penses-tu de la planette terre ?";
             result = api.Completions.CreateCompletionAsync(textBox1.Text, temperature: 0.1, frequencyPenalty: 0.7, top_p: 1.0, max_tokens: 1000);
             result.GetAwaiter().OnCompleted(() => { textBox1.Text += result.Result.ToString(); });*/
-            textBox1.Visible = false;
-        }
-
-        private void completed_Tick()
-        {
-            textBox1.Text = result.Result.ToString();
         }
 
         private void Form1_DragEnter(object sender, DragEventArgs e)
@@ -116,7 +120,7 @@ namespace Bidouille
             string[] lstFiles = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (lstFiles != null && lstFiles.Length > 0)
             {
-                string file = lstFiles.FirstOrDefault(l => ImgExt.Contains(l.Substring(l.Length -4, 4).ToUpper()));
+                string file = lstFiles.FirstOrDefault(l => ImgExt.Contains(l.Substring(l.Length - 4, 4).ToUpper()));
                 if (file != null)
                 {
                     /*
@@ -168,32 +172,32 @@ namespace Bidouille
                 try
                 {
                     ARGB* ptrImg = (ARGB*)btDtmap.Scan0; //uint v = *(ptrImg + j * img.Width + i);
-                    for (int j = 1; j < img.Height; ++j)
+                    for (int j = 1; j < img.Height - 1; ++j)
                     {
                         int jW = j * img.Width;
-                        for (int i = 1; i < img.Width; ++i)
+                        for (int i = 1; i < img.Width - 1; ++i)
                         {
                             int jWi = jW + i;
                             byte delta;
 
                             delta = ARGB.PixDelta(ptrImg[jWi - 1], ptrImg[jWi]); // X
-                            X[jWi - 1] = delta;
-                            //X[jWi] += delta;
+                            //X[jWi - 1] = delta;
+                            X[jWi] = delta;
 
                             delta = ARGB.PixDelta(ptrImg[jWi - img.Width], ptrImg[jWi]); // Y
-                            Y[jWi - img.Width] = delta;
-                            //Y[jWi] += delta;
+                            //Y[jWi - img.Width] = delta;
+                            Y[jWi] = delta;
 
-                            if (i < img.Width - 1)
-                            {
+                            /*if (i < img.Width - 1)
+                            {*/
                                 delta = ARGB.PixDelta(ptrImg[jWi - img.Width + 1], ptrImg[jWi]); // XY /
-                                XY[jWi - img.Width + 1] = delta;
-                                //XY[jWi] += delta;
-                            }
+                                //XY[jWi - img.Width + 1] = delta;
+                                XY[jWi] = delta;
+                            /*}*/
 
                             delta = ARGB.PixDelta(ptrImg[jWi - img.Width - 1], ptrImg[jWi]); // YX \
-                            YX[jWi - img.Width - 1] = delta;
-                            //YX[jWi] += delta;
+                            //YX[jWi - img.Width - 1] = delta;
+                            YX[jWi] = delta;
                         }
                     }
                 }
@@ -214,7 +218,6 @@ namespace Bidouille
             }
             return mag;
         }
-
         static byte[] deltaMag(byte[] X, byte[] Y, byte[] XY, byte[] YX)
         {
             byte[] mag = new byte[X.Length];
@@ -228,40 +231,46 @@ namespace Bidouille
 
         static byte[] deltaMag(byte[] X, byte[] Y, Size taille)
         {
+            //byte max = 0;
             byte[] mag = new byte[X.Length];
-            for (int j = 1; j < taille.Height; ++j)
+            for (int j = 1; j < taille.Height - 1; ++j)
             {
                 int jw = j * taille.Width;
-                for (int i = 1; i < taille.Width; ++i)
+                for (int i = 1; i < taille.Width - 1; ++i)
                 {
                     int jwi = jw + i;
                     //mag[jwi] = (byte)(0.70710678118654752440084436210485 * Math.Sqrt((X[jwi] * X[jwi] + Y[jwi] * Y[jwi])));
                     int dX, dY;
-                    dX = (X[jwi] + X[jwi - 1]);
-                    dY = (Y[jwi] + Y[jwi - taille.Width]);
+                    dX = (X[jwi] + X[jwi + 1]);
+                    dY = (Y[jwi] + Y[jwi + taille.Width]);
                     mag[jwi] = (byte)(0.35355339059327376220042218105242 * Math.Sqrt(dX * dX + dY * dY));
+                    //if (mag[jwi] > max) max = mag[jwi];
                 }
             }
+            //if(max > 0) for (int i = 0; i < mag.Length; ++i) mag[i] = (byte)((mag[i] * 255) / max);
             return mag;
         }
 
         static byte[] deltaMag(byte[] X, byte[] Y, byte[] XY, byte[] YX, Size taille)
         {
+            //byte max = 0;
             byte[] mag = new byte[X.Length];
-            for (int j = 1; j < taille.Height; ++j)
+            for (int j = 1; j < taille.Height - 1; ++j)
             {
                 int jw = j * taille.Width;
-                for (int i = 1; i < taille.Width; ++i)
+                for (int i = 1; i < taille.Width - 1; ++i)
                 {
                     int jwi = jw + i;
                     int dX, dY, dXY, dYX;
-                    dX = (X[jwi] + X[jwi - 1]);
-                    dY = (Y[jwi] + Y[jwi - taille.Width]);
-                    if (i < taille.Width - 1) dXY = (XY[jwi] + XY[jwi - taille.Width + 1]); else dXY = 0;
-                    dYX = (YX[jwi] + YX[jwi - taille.Width - 1]);
-                    mag[jwi] = (byte)(0.28867513459481288225457439025098 * Math.Sqrt((dX * dX + dY * dY + (dXY * dXY + dYX * dYX) * DeuxFoisUnSurRacine2)));
+                    dX = (X[jwi] + X[jwi + 1]);
+                    dY = (Y[jwi] + Y[jwi + taille.Width]);
+                    /*if (i < taille.Width - 1)*/ dXY = (XY[jwi] + XY[jwi + taille.Width - 1]); /*else dXY = 0;*/
+                    dYX = (YX[jwi] + YX[jwi + taille.Width + 1]);
+                    mag[jwi] = (byte)(0.28867513459481288225457439025098 * Math.Sqrt((dX * dX + dY * dY + (dXY * dXY + dYX * dYX) * UnSurRacine2AuCarré)));
+                    //if (mag[jwi] > max) max = mag[jwi];
                 }
             }
+            //if (max > 0) for (int i = 0; i < mag.Length; ++i) mag[i] = (byte)((mag[i] * 256) / max);
             return mag;
         }
 
@@ -308,12 +317,22 @@ namespace Bidouille
         static sbyte[] deltaAng(byte[] X, byte[] Y, byte[] XY, byte[] YX, Size taille)
         {
             sbyte[] ang = new sbyte[X.Length];
-            for (int i = 0; i < taille.Width; ++i) ang[i] = (sbyte)-128;
-            for (int j = 0; j < taille.Height; ++j) ang[j * taille.Width] = (sbyte)-128;
-            for (int j = 1; j < taille.Height; ++j)
+            int lw = taille.Width * (taille.Height - 1);
+            for (int i = 0; i < taille.Width; ++i)
+            {
+                ang[i] = (sbyte)-128;
+                ang[lw+i] = (sbyte)-128;
+            }
+            lw = taille.Width - 1;
+            for (int j = 0; j < taille.Height; ++j)
+            {
+                ang[j * taille.Width] = (sbyte)-128;
+                ang[lw + j * taille.Width] = (sbyte)-128;
+            }
+            for (int j = 1; j < taille.Height - 1; ++j)
             {
                 int jw = j * taille.Width;
-                for (int i = 1; i < taille.Width; ++i)
+                for (int i = 1; i < taille.Width - 1; ++i)
                 {
                     int jwi = jw + i;
                     /*double h = X[i] + Y[i] + XY[i]+ X[i];//Math.Sqrt(X[i] * X[i] + Y[i] * Y[i] + XY[i] * XY[i] + YX[i] * YX[i]);
@@ -324,21 +343,21 @@ namespace Bidouille
                     else ang[i] = (sbyte)-128;*/
 
                     double dX, dY, dXY, dYX;
-                    dX = X[jwi] - X[jwi - 1];
-                    dY = Y[jwi] - Y[jwi - taille.Width];
-                    if (i < taille.Width-1)
-                    {
-                        dXY = XY[jwi] - XY[jwi - taille.Width + 1];
-                    }
-                    else dXY = 0.0;
-                    dYX = YX[jwi] - YX[jwi - taille.Width - 1];
+                    dX = X[jwi + 1] - X[jwi];
+                    dY = Y[jwi + taille.Width] - Y[jwi];
+                    /*if (i < taille.Width - 1)
+                    {*/
+                        dXY = XY[jwi + taille.Width - 1] - XY[jwi];
+                    /*}
+                    else dXY = 0.0;*/
+                    dYX = YX[jwi + taille.Width + 1] - YX[jwi];
 
                     double vx = 0.0;
                     double vy = 0.0;
                     vx += 1.0 * dX; vy += 0.0 * dX;
                     vx += 0.0 * dY; vy += 1.0 * dY;
-                    vx -= DeuxFoisUnSurRacine2 * dXY; vy += DeuxFoisUnSurRacine2 * dXY;
-                    vx += DeuxFoisUnSurRacine2 * dYX; vy += DeuxFoisUnSurRacine2 * dYX;
+                    vx -= UnSurRacine2AuCarré * dXY; vy += UnSurRacine2AuCarré * dXY;
+                    vx += UnSurRacine2AuCarré * dYX; vy += UnSurRacine2AuCarré * dYX;
 
                     double h = Math.Sqrt(vx * vx + vy * vy);
                     if (h > 0.000000001)
@@ -394,7 +413,7 @@ namespace Bidouille
                             byte r = (byte)(f * 255 + (1 - f) * 0);
                             byte g = (byte)(f * 255 + (1 - f) * 0);
                             v = (uint)0xFF << 24 | (uint)r << 16 | (uint)g << 8 | (uint)b;
-                            *(ptrImg+j * btmap.Width + i) = v;
+                            *(ptrImg + j * btmap.Width + i) = v;
                             //nb.SetPixel(i, j, Color.FromArgb((int)v));
                         }
                     }
@@ -476,13 +495,13 @@ namespace Bidouille
                 try
                 {
                     uint* ptrImg = (uint*)btDtmap.Scan0;
-                    for(int j = -sz; j <= sz; ++j)
+                    for (int j = -sz; j <= sz; ++j)
                     {
                         double y = Math.Sin(j * freqY);
                         for (int i = -sz; i <= sz; ++i)
                         {
                             double x = Math.Sin(i * freqX);
-                            byte g = (byte)(127.5+127.5*(x*y) + 0.5);
+                            byte g = (byte)(127.5 + 127.5 * (x * y) + 0.5);
                             *(ptrImg + (sz + j) * btmap.Width + (sz + i)) = ((uint)0xFF << 24) | ((uint)g << 16) | ((uint)g << 8) | (uint)g;
                         }
                     }
@@ -529,7 +548,7 @@ namespace Bidouille
                         {
                             int idx = j * sz.Width + i;
                             double x = Math.Sin(i * fx);
-                            c+= (float)(grey[idx] - (x * y));
+                            c += (float)(grey[idx] - (x * y));
                         }
                     }
 
@@ -544,7 +563,7 @@ namespace Bidouille
             float min = grey.Min();
             float max = grey.Max();
             float dlt = (max - min);
-            if(dlt < -0.00001 || dlt > 0.00001)
+            if (dlt < -0.00001 || dlt > 0.00001)
             {
                 for (int i = 0; i < grey.Length; ++i) grey[i] = coef * ((2.0f * (grey[i] - min) / dlt) - 1.0f);
             }
@@ -560,7 +579,6 @@ namespace Bidouille
                 for (int u = 0; u < def; ++u)
                 {
                     double c = 0.0f;
-
                     for (int j = 0; j < sz.Height; ++j)
                     {
                         for (int i = 0; i < sz.Width; ++i)
@@ -570,13 +588,11 @@ namespace Bidouille
                             //c += grey[idx] * Math.Exp(-freqdef * 2 * Math.PI * (((i * u) + (j * v)) / def));
                         }
                     }
-
                     tf[v * def + u] = (float)(c / nbpix);
                 }
             }
             return tf;
         }
-
         private float[] CalculerTFInv(float[] tf, Size sz, int def, double freqdef)
         {
             //double nbpix = def * def;
@@ -586,9 +602,7 @@ namespace Bidouille
                 for (int i = 0; i < sz.Width; ++i)
                 {
                     int idx = j * sz.Width + i;
-
                     double g = 0.0f;
-
                     for (int v = 0; v < def; ++v)
                     {
                         for (int u = 0; u < def; ++u)
@@ -597,11 +611,9 @@ namespace Bidouille
                             g += tf[v * def + u] * Math.Exp(freqdef * 2 * Math.PI * (((double)(i * u) + (double)(j * v)) / (double)def));
                         }
                     }
-
                     grey[idx] = (float)(g / def);
                 }
             }
-
             return grey;
         }*/
 
@@ -729,7 +741,7 @@ namespace Bidouille
             return btmap;
         }
 
-        private Image GrayToImg(sbyte[] grey, Size sz)
+        /*private Image GrayToImg(sbyte[] grey, Size sz)
         {
             Bitmap btmap = new Bitmap(sz.Width, sz.Height);
             BitmapData btDtmap = btmap.LockBits(new Rectangle(0, 0, btmap.Width, btmap.Height), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
@@ -752,24 +764,25 @@ namespace Bidouille
                 finally { btmap.UnlockBits(btDtmap); }
             }
             return btmap;
-        }
+        }*/
 
         private Image GrayToImg(byte[] grey, Size sz)
         {
+            byte max = (byte)Math.Max((byte)1, grey.Max());
             Bitmap btmap = new Bitmap(sz.Width, sz.Height);
             BitmapData btDtmap = btmap.LockBits(new Rectangle(0, 0, btmap.Width, btmap.Height), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             unsafe
             {
                 try
                 {
-                    uint* ptrImg = (uint*)btDtmap.Scan0;
+                    ARGB* ptrImg = (ARGB*)btDtmap.Scan0;
                     for (int j = 0; j < sz.Height; ++j)
                     {
                         for (int i = 0; i < sz.Width; ++i)
                         {
                             int idx = j * btmap.Width + i;
-                            byte g = grey[idx];
-                            *(ptrImg + idx) = ((uint)0xFF << 24) | ((uint)g << 16) | ((uint)g << 8) | (uint)g;
+                            byte g = (byte)((grey[idx] * 255) / max);
+                            ptrImg[idx] = new ARGB(g);
                         }
                     }
                 }
@@ -843,11 +856,9 @@ namespace Bidouille
                         {
                             int idx = j * btmap.Width + i;
                             sbyte a = ang[idx];
-
                             //X -> XY = 0 -> 63.75
                             //XY -> Y = 63.75 -> 127.5
                             //Y -> YX = 127.5 -> 191.25
-
                             ARGB cAng;
                             if (a != -128)
                             {
@@ -858,7 +869,6 @@ namespace Bidouille
                                 cAng.Pond(Math.Abs(axe[idx]) / 127.0);
                             }
                             else cAng = new ARGB();
-
                             ptrImg[idx] = cAng;
                         }
                     }
@@ -871,6 +881,7 @@ namespace Bidouille
 
         private Image AngToImg(sbyte[] ang, byte[] mag, Size sz)
         {
+            byte max = (byte)Math.Max((byte)1, mag.Max());
             Bitmap btmap = new Bitmap(sz.Width, sz.Height);
             BitmapData btDtmap = btmap.LockBits(new Rectangle(0, 0, btmap.Width, btmap.Height), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             unsafe
@@ -896,7 +907,8 @@ namespace Bidouille
                                 else if (a < 0) cAng = ARGB.Pond(CYX, CX, (a + 64) / 64.0);
                                 else if (a < 64) cAng = ARGB.Pond(CX, CXY, (a - 0) / 64.0);
                                 else cAng = ARGB.Pond(CXY, CY, (a - 64) / 64.0);
-                                cAng.Pond(Math.Abs(mag[idx]) / 255.0);
+                                //cAng.Pond(((mag[idx]*255) / max) / 255.0);
+                                cAng.A = (byte)((mag[idx] * 255) / max);
                             }
                             else cAng = new ARGB();
 
@@ -912,7 +924,7 @@ namespace Bidouille
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            if(img != null)
+            if (img != null)
             {
                 //e.Graphics.ScaleTransform(6.0f, 6.0f);
                 e.Graphics.DrawImage(img, 0, 0);
